@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nesne Tespit Sistemi</title>
+<style>
+:root{--red:#ff2a44;--cy:#34e0ff;--tx:#e8f1f5;--mono:ui-monospace,Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#000;color:var(--tx);font-family:system-ui,sans-serif;overflow:hidden}
+video,canvas{position:fixed;inset:0;width:100%;height:100%;object-fit:contain}
+.glass{background:#06080cb8;border:1px solid #34e0ff33;backdrop-filter:blur(10px);border-radius:12px}
+#top{position:fixed;top:0;left:0;right:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 8px) 14px 8px;font:600 13px var(--mono);text-shadow:0 1px 3px #000}
+#top span{margin-left:14px}#top span:first-child{margin:0}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);margin-right:8px;animation:bl 1s steps(2) infinite}
+@keyframes bl{50%{opacity:.2}}
+#panel{position:fixed;top:calc(env(safe-area-inset-top,0px) + 42px);right:12px;width:232px;z-index:3;padding:12px;display:none;font-size:13px}
+#panel.open{display:block}
+.row{display:flex;justify-content:space-between;align-items:center}
+.h{margin:12px 0 5px;color:#9fb4bd;font-size:12px}
+.meter{height:8px;border-radius:4px;background:#ffffff1c;overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#2ee6a6,#ffc14d,#ff2a44);background-size:206px 100%}
+.chip{display:inline-block;margin:0 5px 5px 0;padding:3px 8px;border-radius:999px;background:#34e0ff22;border:1px solid #34e0ff55;font-size:12px}
+.chip.bad{background:#ff2a4430;border-color:var(--red)}
+.dim{color:#7d909a}
+#log{font:12px/1.5 var(--mono);color:#b8c8cf;min-height:20px}#log .bad{color:#ff8393}
+input[type=range]{width:100%;accent-color:var(--red)}
+#bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:3;display:flex;gap:2px;padding:6px}
+button{font:600 15px system-ui;min-width:46px;height:46px;padding:0 14px;border:0;border-radius:10px;background:transparent;color:var(--tx);cursor:pointer}
+button:hover,button:active{background:#34e0ff26}
+button:focus-visible{outline:2px solid var(--cy)}
+button:disabled{opacity:.5}
+#fl{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:4;transition:opacity .35s}
+#fl.on{opacity:.8;transition:none}
+#start{position:fixed;inset:0;z-index:6;display:flex;flex-direction:column;gap:16px;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 35%,#0d1a22,#06080c 70%);text-align:center;padding:24px;transition:opacity .5s}
+#start.off{opacity:0;pointer-events:none}
+#start h1{margin:0;font-size:28px;letter-spacing:.02em}
+#msg{opacity:.75;font-size:14px;max-width:340px;line-height:1.5}
+.radar{width:120px;height:120px;border-radius:50%;border:2px solid #34e0ff66;background:conic-gradient(from 0deg,#34e0ff00 60%,#34e0ff99);animation:sp 2.2s linear infinite;box-shadow:0 0 40px #34e0ff33}
+@keyframes sp{to{transform:rotate(360deg)}}
+#go{background:var(--red);font-size:18px;height:54px;padding:0 32px;border-radius:12px}
+@media (prefers-reduced-motion:reduce){.radar,.dot{animation:none}}
+</style>
+</head>
+<body>
+<video id="v" playsinline muted></video>
+<canvas id="c"></canvas>
+<div id="fl"></div>
+<div id="top"><span><i class="dot"></i><b id="st">Hazır</b></span><span><span id="fps"></span><span id="clk"></span></span></div>
+<div id="panel" class="glass">
+  <div class="row"><span>Tehdit seviyesi</span><b id="tl" style="color:#2ee6a6">GÜVENLİ</b></div>
+  <div class="meter"><i id="tm"></i></div>
+  <div class="h">Algılananlar</div><div id="cnt"><span class="dim">Nesne yok</span></div>
+  <div class="h">Olay kaydı</div><div id="log"></div>
+  <div class="h row"><span>Bıçak eşiği</span><b id="sv">%25</b></div>
+  <input id="sens" type="range" min="15" max="60" value="25" aria-label="Bıçak eşiği">
+  <div class="dim" style="font-size:11px;margin-top:4px">Düşük değer daha hassas, yanlış alarm da artar.</div>
+</div>
+<div id="bar" class="glass">
+  <button id="mode" aria-label="Model modu">⚡ Hızlı</button>
+  <button id="snd" aria-label="Ses">🔊</button>
+  <button id="shot" aria-label="Ekran görüntüsü">📷</button>
+  <button id="flip" aria-label="Kamerayı çevir">🔄</button>
+  <button id="pn" aria-label="Panel">☰</button>
+  <button id="fs" aria-label="Tam ekran">⛶</button>
+</div>
+<div id="start">
+  <div class="radar"></div>
+  <h1>Nesne Tespit Sistemi</h1>
+  <div id="msg">Gerçek zamanlı nesne tanıma ve takip. Bıçak veya makas görülürse hedef kilitlenir, alarm çalar.</div>
+  <button id="go">Sistemi başlat</button>
+</div>
+
+<script type="module">
+import {ObjectDetector, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const $ = id => document.getElementById(id);
+const v = $('v'), c = $('c'), ctx = c.getContext('2d');
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const BASE = "https://storage.googleapis.com/mediapipe-models/object_detector/";
+const MODELS = {
+  fast: BASE + "efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
+  acc:  BASE + "efficientdet_lite2/float32/1/efficientdet_lite2.tflite"
+};
+const TR = {person:'İnsan',bicycle:'Bisiklet',car:'Araba',motorcycle:'Motosiklet',airplane:'Uçak',bus:'Otobüs',train:'Tren',truck:'Kamyon',boat:'Tekne','traffic light':'Trafik lambası','fire hydrant':'Yangın musluğu','stop sign':'Dur tabelası','parking meter':'Parkmetre',bench:'Bank',bird:'Kuş',cat:'Kedi',dog:'Köpek',horse:'At',sheep:'Koyun',cow:'İnek',elephant:'Fil',bear:'Ayı',zebra:'Zebra',giraffe:'Zürafa',backpack:'Sırt çantası',umbrella:'Şemsiye',handbag:'Çanta',tie:'Kravat',suitcase:'Bavul',frisbee:'Frizbi',skis:'Kayak',snowboard:'Snowboard','sports ball':'Top',kite:'Uçurtma','baseball bat':'Beyzbol sopası','baseball glove':'Eldiven',skateboard:'Kaykay',surfboard:'Sörf tahtası','tennis racket':'Raket',bottle:'Şişe','wine glass':'Kadeh',cup:'Bardak',fork:'Çatal',knife:'BIÇAK',spoon:'Kaşık',bowl:'Kase',banana:'Muz',apple:'Elma',sandwich:'Sandviç',orange:'Portakal',broccoli:'Brokoli',carrot:'Havuç','hot dog':'Sosisli',pizza:'Pizza',donut:'Donut',cake:'Pasta',chair:'Sandalye',couch:'Koltuk','potted plant':'Bitki',bed:'Yatak','dining table':'Masa',toilet:'Tuvalet',tv:'Televizyon',laptop:'Laptop',mouse:'Fare',remote:'Kumanda',keyboard:'Klavye','cell phone':'Telefon',microwave:'Mikrodalga',oven:'Fırın',toaster:'Tost makinesi',sink:'Lavabo',refrigerator:'Buzdolabı',book:'Kitap',clock:'Saat',vase:'Vazo',scissors:'MAKAS','teddy bear':'Ayıcık','hair drier':'Saç kurutma',toothbrush:'Diş fırçası'};
+const DANGER = new Set(['knife', 'scissors']);
+const RED = '#ff2a44', CY = '#34e0ff';
+
+let vision, det = null, mode = 'fast', facing = 'environment', stream, started = false;
+let soundOn = true, ac, lastBeep = 0, thr = 0.25, threat = 0, lastLv = '', lastCnt = 0;
+let tracks = [], nextId = 1, lastT = -1, frames = 0, tFps = performance.now();
+
+if (innerWidth > 700) $('panel').classList.add('open');
+if (!document.documentElement.requestFullscreen) $('fs').remove();
+setInterval(() => $('clk').textContent = new Date().toLocaleTimeString('tr-TR'), 1000);
+
+function log(msg, bad) {
+  const d = document.createElement('div');
+  if (bad) d.className = 'bad';
+  d.textContent = new Date().toLocaleTimeString('tr-TR') + '  ' + msg;
+  $('log').prepend(d);
+  while ($('log').children.length > 5) $('log').lastChild.remove();
+}
+
+function beep() {
+  const n = performance.now();
+  if (!soundOn || !ac || n - lastBeep < 700) return;
+  lastBeep = n;
+  [880, 640].forEach((f, i) => {
+    const t0 = ac.currentTime + i * 0.17, o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'square'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.15);
+    o.connect(g).connect(ac.destination);
+    o.start(t0); o.stop(t0 + 0.16);
+  });
+  navigator.vibrate?.(120);
+}
+
+async function loadDet(m) {
+  det?.close(); det = null;
+  $('st').textContent = 'Model yükleniyor…';
+  for (const delegate of ['GPU', 'CPU']) {
+    try {
+      det = await ObjectDetector.createFromOptions(vision, {
+        baseOptions: {modelAssetPath: MODELS[m], delegate},
+        runningMode: 'VIDEO', scoreThreshold: 0.15, maxResults: 20
+      });
+      $('st').textContent = 'CANLI • ' + (m === 'fast' ? 'Hızlı' : 'Hassas') + (delegate === 'CPU' ? ' (CPU)' : '');
+      return;
+    } catch (e) { console.warn(delegate, e); }
+  }
+  throw new Error('Model yüklenemedi. İnternet bağlantısını kontrol et.');
+}
+
+async function startCam() {
+  stream?.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {facingMode: facing, width: {ideal: 1280}, height: {ideal: 720}}
+  });
+  v.srcObject = stream;
+  await v.play();
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  tracks = [];
+}
+
+const cx = o => o.x + o.w / 2, cy = o => o.y + o.h / 2;
+
+function update(dets, now) {
+  tracks.forEach(t => t.seen = false);
+  for (const d of dets) {
+    let best = null, bd = 1e9;
+    for (const t of tracks) {
+      if (t.seen || t.name !== d.name) continue;
+      const dd = Math.hypot(cx(t) - cx(d), cy(t) - cy(d));
+      if (dd < bd) { bd = dd; best = t; }
+    }
+    if (best && bd < Math.max(best.w, best.h, d.w, d.h) * 1.5) {
+      const ox = cx(best), oy = cy(best), dt = Math.max(0.016, (now - best.t) / 1000);
+      for (const k of ['x', 'y', 'w', 'h']) best[k] += (d[k] - best[k]) * 0.55;
+      best.vx += ((cx(best) - ox) / dt - best.vx) * 0.35;
+      best.vy += ((cy(best) - oy) / dt - best.vy) * 0.35;
+      best.score = d.score; best.miss = 0; best.seen = true; best.t = now;
+      best.trail.push([cx(best), cy(best)]);
+      if (best.trail.length > 40) best.trail.shift();
+    } else {
+      const t = {...d, id: nextId++, miss: 0, seen: true, t: now, vx: 0, vy: 0, trail: [[cx(d), cy(d)]]};
+      tracks.push(t);
+      if (DANGER.has(t.name)) log(TR[t.name] + ' algılandı #' + t.id, 1);
+    }
+  }
+  tracks.forEach(t => { if (!t.seen) t.miss++; });
+  tracks = tracks.filter(t => {
+    if (t.miss < 10) return true;
+    if (DANGER.has(t.name)) log(TR[t.name] + ' görüş dışı #' + t.id);
+    return false;
+  });
+}
+
+function brackets(x, y, w, h, L) {
+  ctx.beginPath();
+  [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]].forEach(([px, py, sx, sy]) => {
+    ctx.moveTo(px + sx * L, py); ctx.lineTo(px, py); ctx.lineTo(px, py + sy * L);
+  });
+  ctx.stroke();
+}
+
+function draw(now) {
+  const W = c.width, H = c.height, u = Math.max(1.5, W / 640);
+  ctx.clearRect(0, 0, W, H);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+  // HUD çerçevesi ve tarama çizgisi
+  ctx.strokeStyle = '#ffffff88'; ctx.lineWidth = u * 2;
+  brackets(14 * u, 14 * u, W - 28 * u, H - 28 * u, 26 * u);
+  const sy = ((now / 3000) % 1) * H, g = ctx.createLinearGradient(0, sy - 40 * u, 0, sy);
+  g.addColorStop(0, '#34e0ff00'); g.addColorStop(1, '#34e0ff22');
+  ctx.fillStyle = g; ctx.fillRect(0, sy - 40 * u, W, 40 * u);
+
+  let alarm = null;
+  for (const t of tracks) {
+    const bad = DANGER.has(t.name), col = bad ? RED : CY, X = cx(t), Y = cy(t);
+    if (bad && !alarm && t.miss < 4) alarm = t;
+    ctx.strokeStyle = col;
+
+    // solan hareket izi
+    const n = t.trail.length;
+    ctx.lineWidth = u * (bad ? 3 : 1.4);
+    for (let i = 1; i < n; i++) {
+      ctx.globalAlpha = (i / n) * (t.miss ? 0.4 : 0.9);
+      ctx.beginPath(); ctx.moveTo(...t.trail[i - 1]); ctx.lineTo(...t.trail[i]); ctx.stroke();
+    }
+    ctx.globalAlpha = t.miss ? 0.55 : 1;
+
+    // hareket yönü tahmini
+    const sp = Math.hypot(t.vx, t.vy);
+    if (sp > W * 0.08) {
+      const ex = X + t.vx * 0.35, ey = Y + t.vy * 0.35, a = Math.atan2(t.vy, t.vx);
+      ctx.lineWidth = u * 2; ctx.beginPath();
+      ctx.moveTo(X, Y); ctx.lineTo(ex, ey);
+      ctx.lineTo(ex - 12 * u * Math.cos(a - 0.5), ey - 12 * u * Math.sin(a - 0.5));
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - 12 * u * Math.cos(a + 0.5), ey - 12 * u * Math.sin(a + 0.5));
+      ctx.stroke();
+    }
+
+    if (bad) {
+      ctx.fillStyle = 'rgba(255,42,68,.16)'; ctx.fillRect(t.x, t.y, t.w, t.h);
+      ctx.lineWidth = u * (3 + Math.sin(now / 110) * 1.2); ctx.strokeRect(t.x, t.y, t.w, t.h);
+      ctx.lineWidth = u * 5;
+      brackets(t.x - 4 * u, t.y - 4 * u, t.w + 8 * u, t.h + 8 * u, Math.min(t.w, t.h) * 0.35 + 10 * u);
+      ctx.lineWidth = u * 2; ctx.setLineDash([8 * u, 8 * u]); ctx.lineDashOffset = -now / 40;
+      ctx.beginPath(); ctx.arc(X, Y, Math.max(t.w, t.h) * 0.62 + 8 * u, 0, 7); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineWidth = u * 1.5; ctx.beginPath();
+      ctx.moveTo(X - 9 * u, Y); ctx.lineTo(X + 9 * u, Y); ctx.moveTo(X, Y - 9 * u); ctx.lineTo(X, Y + 9 * u);
+      ctx.stroke();
+      ctx.font = `800 ${12 * u}px system-ui,sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      ctx.fillStyle = col; ctx.fillText('KİLİTLENDİ', t.x, Math.min(H - 6 * u, t.y + t.h + 16 * u));
+    } else {
+      ctx.fillStyle = '#34e0ff12'; ctx.fillRect(t.x, t.y, t.w, t.h);
+      ctx.lineWidth = u * 1.8; brackets(t.x, t.y, t.w, t.h, Math.min(t.w, t.h) * 0.25 + 6 * u);
+    }
+
+    const txt = (TR[t.name] || t.name) + ' %' + Math.round(t.score * 100) + (bad ? ' · HIZ ' + Math.round(sp / W * 100) : '');
+    ctx.font = `700 ${14 * u}px system-ui,sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const w = ctx.measureText(txt).width + 12 * u, h = 22 * u, ly = t.y > h ? t.y - h : t.y;
+    ctx.fillStyle = col; ctx.fillRect(t.x, ly, w, h);
+    ctx.fillStyle = bad ? '#fff' : '#00222b'; ctx.fillText(txt, t.x + 6 * u, ly + h / 2);
+  }
+  ctx.globalAlpha = 1;
+
+  if (alarm) {
+    const p = Math.sin(now / 150), vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+    vg.addColorStop(0, 'rgba(255,0,40,0)'); vg.addColorStop(1, `rgba(255,0,40,${0.28 + p * 0.12})`);
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    const bh = 36 * u, by = H * 0.08;
+    ctx.fillStyle = p > 0 ? RED : '#a80019'; ctx.fillRect(0, by, W, bh);
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 ${20 * u}px system-ui,sans-serif`;
+    ctx.fillText('⚠ ' + TR[alarm.name] + ' ALGILANDI', W / 2, by + bh / 2);
+    ctx.textAlign = 'left';
+  }
+}
+
+function counts() {
+  const m = {};
+  tracks.forEach(t => { if (!t.miss) m[t.name] = (m[t.name] || 0) + 1; });
+  $('cnt').innerHTML = Object.entries(m).map(([k, n]) =>
+    `<span class="chip${DANGER.has(k) ? ' bad' : ''}">${TR[k] || k} ×${n}</span>`).join('') || '<span class="dim">Nesne yok</span>';
+}
+
+function loop() {
+  requestAnimationFrame(loop);
+  const now = performance.now();
+  if (det && v.readyState >= 2 && v.currentTime !== lastT) {
+    lastT = v.currentTime;
+    if (c.width !== v.videoWidth) { c.width = v.videoWidth; c.height = v.videoHeight; }
+    const res = det.detectForVideo(v, now), to = Math.max(0.45, thr);
+    update(res.detections.map(d => {
+      const k = d.categories[0], b = d.boundingBox;
+      return {name: k.categoryName, score: k.score, x: b.originX, y: b.originY, w: b.width, h: b.height};
+    }).filter(d => d.score >= (DANGER.has(d.name) ? thr : to)), now);
+    if (++frames >= 15) {
+      $('fps').textContent = Math.round(frames * 1000 / (now - tFps)) + ' FPS';
+      frames = 0; tFps = now;
+    }
+  }
+  draw(now);
+
+  const bad = tracks.some(t => DANGER.has(t.name) && t.miss < 4);
+  threat += ((bad ? 100 : 0) - threat) * (bad ? 0.15 : 0.05);
+  $('tm').style.width = threat + '%';
+  const lv = threat < 15 ? 'GÜVENLİ' : threat < 60 ? 'DİKKAT' : 'TEHLİKE';
+  if (lv !== lastLv) {
+    lastLv = lv; $('tl').textContent = lv;
+    $('tl').style.color = lv === 'GÜVENLİ' ? '#2ee6a6' : lv === 'DİKKAT' ? '#ffc14d' : RED;
+  }
+  if (bad) beep();
+  if (now - lastCnt > 500) { lastCnt = now; counts(); }
+}
+
+function shot() {
+  const o = document.createElement('canvas');
+  o.width = c.width; o.height = c.height;
+  const x = o.getContext('2d');
+  x.drawImage(v, 0, 0, o.width, o.height); x.drawImage(c, 0, 0);
+  o.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = 'tespit-' + Date.now() + '.png'; a.click();
+  }, 'image/png');
+  $('fl').classList.add('on');
+  setTimeout(() => $('fl').classList.remove('on'), 60);
+}
+
+$('go').onclick = async () => {
+  const step = t => $('msg').textContent = t;
+  $('go').disabled = true;
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    ac.resume?.();
+    step('Kamera açılıyor…'); await startCam();
+    step('Yapay zeka motoru hazırlanıyor…'); vision = vision || await FilesetResolver.forVisionTasks(WASM);
+    step('Model yükleniyor…'); await loadDet(mode);
+    $('start').classList.add('off'); setTimeout(() => $('start').remove(), 600);
+    if (!started) { started = true; loop(); }
+  } catch (e) {
+    step(e.name === 'NotAllowedError'
+      ? 'Kamera izni verilmedi. Tarayıcı ayarlarından izin verip tekrar dene.'
+      : 'Hata: ' + e.message);
+    $('go').disabled = false;
+  }
+};
+
+$('flip').onclick = async () => {
+  facing = facing === 'environment' ? 'user' : 'environment';
+  try { await startCam(); } catch (e) { $('st').textContent = 'Kamera açılamadı'; }
+};
+
+$('mode').onclick = async () => {
+  const b = $('mode'), next = mode === 'fast' ? 'acc' : 'fast';
+  b.disabled = true;
+  try { await loadDet(next); mode = next; }
+  catch (e) { try { await loadDet(mode); } catch (_) {} }
+  b.textContent = mode === 'fast' ? '⚡ Hızlı' : '🎯 Hassas';
+  b.disabled = false;
+};
+
+$('snd').onclick = () => { soundOn = !soundOn; $('snd').textContent = soundOn ? '🔊' : '🔇'; };
+$('shot').onclick = shot;
+$('pn').onclick = () => $('panel').classList.toggle('open');
+$('fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+$('sens').oninput = e => { thr = e.target.value / 100; $('sv').textContent = '%' + e.target.value; };
+</script>
+</body>
+</html>
